@@ -63,9 +63,17 @@ export async function registerPublishedStack({ api, root, repository, published 
     if (seen.has(parent.number)) return result('skipped', { reason: 'Cyclic PR dependencies cannot form a stack.' });
     const siblings = opened.filter(pr => pr.number !== child.number && isOpen(pr) &&
       pr.base?.ref === parent.head.ref && pr.head?.repo?.full_name?.toLowerCase() === repository.toLowerCase());
-    if (siblings.length) return result('skipped', {
-      reason: 'The parent has multiple open child PRs. Keep this fan-out independent instead of inventing a linear stack.'
-    });
+    if (siblings.length) {
+      // A later sibling cannot make an already-linked PR forget the native
+      // membership GitHub has recorded. Do not mutate this fan-out.
+      const registered = await findStack(api, root, published.number);
+      if (registered) return result('already-linked', {
+        stackNumber: registered.number, pullRequests: members(registered)
+      });
+      return result('skipped', {
+        reason: 'The parent has multiple open child PRs. Keep this fan-out independent instead of inventing a linear stack.'
+      });
+    }
     if (!sha.test(parent.head.sha || '')) return result('skipped', { reason: 'The parent head SHA could not be verified.' });
     const comparison = await api(root + '/compare/' + parent.head.sha + '...' + child.head.sha);
     if (comparison.merge_base_commit?.sha !== parent.head.sha || !(comparison.ahead_by > 0)) {
@@ -88,7 +96,9 @@ export async function registerPublishedStack({ api, root, repository, published 
   const childStack = await findStack(api, root, published.number);
   if (childStack) {
     const actual = members(childStack);
-    return actual.join(',') === numbers.join(',')
+    const index = actual.indexOf(published.number);
+    // A PR already in an established stack can have more layers above it.
+    return index >= 0 && actual.slice(0, index + 1).join(',') === numbers.join(',')
       ? result('already-linked', { stackNumber: childStack.number, pullRequests: actual })
       : result('skipped', { reason: 'The PR is already registered in a different stack; no changes made.' });
   }

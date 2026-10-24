@@ -81,6 +81,15 @@ test('appends a new child to the existing native stack top, without creating a n
     [[root + '/stacks/8/add', { pull_requests: [12] }]]);
 });
 
+test('reusing a lower layer already in a longer native stack preserves its membership', async () => {
+  const stack = { number: 8, pull_requests: [{ number: 10 }, { number: 11 }, { number: 12 }] };
+  const f = fixture({ prs: [parent, child, grandchild], stacks: [stack] });
+  const result = await registration(f, child);
+  assert.equal(result.status, 'already-linked');
+  assert.deepEqual(result.pullRequests, [10, 11, 12]);
+  assert.equal(posts(f.calls).length, 0);
+});
+
 test('creates an ordered stack from the whole verified unlinked branch chain', async () => {
   const f = fixture({ prs: [parent, child, grandchild] });
   const result = await registration(f, grandchild);
