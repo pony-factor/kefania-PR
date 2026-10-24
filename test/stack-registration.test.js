@@ -173,7 +173,8 @@ test('automatic publisher-side hook links native stacks and returns verified mem
 });
 
 test('newly published child PR uses the same automatic stack registration as reused PRs', async () => {
-  const f = fixture({ prs: [parent] });
+  const prs = [parent];
+  const f = fixture({ prs });
   let created = false;
   const api = async (endpoint, options = {}) => {
     if (endpoint === root + '/commits/child') return { sha: child.head.sha };
@@ -187,6 +188,7 @@ test('newly published child PR uses the same automatic stack registration as reu
     if (endpoint.startsWith(root + '/pulls?state=closed')) return [];
     if (endpoint === root + '/pulls' && options.method === 'POST') {
       created = true;
+      prs.push(child);
       return child;
     }
     if (endpoint === root + '/pulls?state=open&per_page=100&page=1') {
