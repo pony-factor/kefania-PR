@@ -171,3 +171,35 @@ test('automatic publisher-side hook links native stacks and returns verified mem
   assert.equal(published.stack.status, 'linked');
   assert.equal(posts(f.calls).length, 1);
 });
+
+test('newly published child PR uses the same automatic stack registration as reused PRs', async () => {
+  const f = fixture({ prs: [parent] });
+  let created = false;
+  const api = async (endpoint, options = {}) => {
+    if (endpoint === root + '/commits/child') return { sha: child.head.sha };
+    if (endpoint.startsWith(root + '/compare/parent...child')) return {
+      ahead_by: 1, head_commit: { sha: child.head.sha }, base_commit: { sha: parent.head.sha },
+      merge_base_commit: { sha: parent.head.sha }, files: [], total_commits: 1, commits: [{}]
+    };
+    if (endpoint.startsWith(root + '/pulls?') && endpoint.includes('head=pony-factor%3Achild')) {
+      return created ? [child] : [];
+    }
+    if (endpoint.startsWith(root + '/pulls?state=closed')) return [];
+    if (endpoint === root + '/pulls' && options.method === 'POST') {
+      created = true;
+      return child;
+    }
+    if (endpoint === root + '/pulls?state=open&per_page=100&page=1') {
+      return created ? [parent, child] : [parent];
+    }
+    return f.api(endpoint, options);
+  };
+  const actions = createActions({ request: api, allowedRepositories: [repository] });
+  const published = await actions.create({ owner: 'pony-factor', repo: 'kefania',
+    head: 'child', base: 'parent', expectedHeadSha: child.head.sha,
+    title: '🔧 New child feature', body: 'Child changes' });
+  assert.equal(published.existing, false);
+  assert.equal(published.stack.status, 'linked');
+  assert.deepEqual(published.stack.pullRequests, [10, 11]);
+  assert.equal(posts(f.calls).length, 1);
+});
