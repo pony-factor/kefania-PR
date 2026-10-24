@@ -72,10 +72,15 @@ export function createMcpServer({ actions = createActions() } = {}) {
     inputSchema: selection, annotations: readOnly,
   }, call(actions.context));
   server.registerTool('github_create_pull_request', {
-    description: 'Publish a diff-grounded PR in owner/repo, optionally from the headRepository fork. Read context first and supply its headSha as expectedHeadSha. Reuses an existing open PR, appends the description attribution exactly once, and records supplied source metadata as a separate comment. Never commits, pushes, or merges. The source result may report a comment failure even though PR creation succeeded.',
+    description: 'Publish a diff-grounded PR in owner/repo, optionally from the headRepository fork. Read context first and supply its headSha as expectedHeadSha. Reuses an existing open PR, appends the description attribution exactly once, and records supplied source metadata as a separate comment. Never commits, pushes, or merges. The source or stack result may report a post-publication failure even though PR creation succeeded. For already-created PRs retry stack linking via github_register_pull_request_stack.',
     inputSchema: publishInputSchema.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   }, call(actions.create));
+  server.registerTool('github_register_pull_request_stack', {
+    description: 'Register an existing same-repository PR and its verified linear ancestors as a GitHub-native stack, or append it to the verified top of an existing stack. Safe to retry after publication. Never creates PRs, retargets branches, or rewrites history. Returns an explicit skipped or failed status when branches fork or do not qualify.',
+    inputSchema: { owner: component, repo: component, number: z.number().int().positive() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  }, call(actions.stack));
   server.registerTool('github_comment_pull_request_source', {
     description: 'Add supplied originating conversation metadata to the open PR for this head/base. Repeated calls for the same conversation reuse its comment. Returns “No open pull request found” while PR creation is still pending.',
     inputSchema: { ...selection, source },
