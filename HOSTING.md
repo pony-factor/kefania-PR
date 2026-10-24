@@ -4,6 +4,21 @@ The hosted service accepts a finished PR title and body through OAuth-protected 
 
 ## Deployment
 
+## Deploy from the local setup page to AWS App Runner
+
+The existing OAuth publisher is deployable from Kefania's local settings page. Run npm run setup:web, open http://127.0.0.1:8766, and expand **05 · Hosted web publishing**. This is separate from local drafting: the hosted service accepts only already-completed PR titles, bodies and published branches.
+
+Prerequisites:
+1. Configure AWS CLI credentials on the same computer, granting App Runner create/describe/update and iam:PassRole rights. The local page invokes your own AWS CLI; no AWS keys are placed in the browser.
+2. Set up an **App Runner GitHub source connection** authorized to read pony-factor/kefania-PR. Copy the connection ARN. This enables automatic redeployment when main changes.
+3. Store the GitHub App **web OAuth client secret** and **private-key PEM** as two AWS Secrets Manager secrets. Copy their ARNs, not the secret values. Give an App Runner instance IAM role secretsmanager:GetSecretValue access only to these secrets.
+4. Supply the GitHub App ID and public Client ID, numeric authorized GitHub user IDs, allowed target repositories, and exact HTTPS OAuth redirect URI(s) shown by the ChatGPT connection setup.
+5. Click **Deploy to AWS**. This creates a billed, Node 22 App Runner service with a placeholder OAuth origin. When its status is RUNNING, click **Activate web OAuth**. That updates KEFANIA_PUBLIC_URL to AWS's generated HTTPS service hostname. Wait for the update to reach RUNNING.
+6. Add the returned /oauth/github/callback URL to your GitHub App's authorization callbacks. Connect the returned /mcp endpoint to a supported ChatGPT OAuth MCP connection, inspect a branch, and test with a disposable PR.
+
+The wizard does not expose secrets to ChatGPT, deploy with your personal GitHub token, alter existing Git branches, or merge PRs. AWS costs accrue while the service is running. If an AWS call times out, inspect the existing App Runner service before retrying to avoid duplicate services. OAuth sessions are currently **memory-only**: use one instance, expect reconnects after restart, and do not scale horizontally until session storage is externalized. This does not intercept Codex Web's native Create PR button.
+
+
 Deploy the included `Dockerfile`, or use Node 20+ with `npm ci --omit=dev --ignore-scripts` and `npm run start:hosted`. Terminate HTTPS at your host, forward the public Host header, and configure its assigned `PORT` (default `8765`).
 
 Set these values in the host configuration. Put credentials in its secret manager, never in Git, build arguments, command lines, or task prompts.

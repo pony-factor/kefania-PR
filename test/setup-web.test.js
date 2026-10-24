@@ -158,3 +158,29 @@ test('Sweetiebot setup routes require CSRF and a saved authorized repository', a
     assert.deepEqual(actions.map(([action]) => action), ['check', 'repair']);
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
+
+test('hosted routes require CSRF and do not call local drafting', async () => {
+  const actions = [];
+  const server = createSetupServer({
+    github: { status: async () => ({ githubLogin: 'tester', githubAuth: 'cli' }) },
+    preferences: { load: async () => ({ repositories: [] }) },
+    hosted: {
+      deploy: async input => { actions.push('deploy'); return { serviceArn: 'example' }; },
+      activate: async input => { actions.push('activate'); return { mcpUrl: 'https://example/mcp' }; },
+    },
+    draftPr: async () => { assert.fail('Local drafter must not run'); },
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = 'http://127.0.0.1:' + server.address().port;
+  try {
+    const csrf = (await (await fetch(base + '/api/bootstrap')).json()).csrf;
+    const call = (route, token) => fetch(base + '/api/hosted/' + route, {
+      method: 'POST', headers: { 'X-Kefania-CSRF': token }, body: '{}',
+    });
+    assert.equal((await call('deploy', 'bad')).status, 403);
+    assert.deepEqual(actions, []);
+    assert.equal((await call('deploy', csrf)).status, 200);
+    assert.equal((await call('activate', csrf)).status, 200);
+    assert.deepEqual(actions, ['deploy', 'activate']);
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});
