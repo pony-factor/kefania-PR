@@ -81,35 +81,74 @@ export function createActions({ request = githubRequest,
     const pulls = await scope.api(scope.root + '/pulls?' + query);
     return pulls.find(pr => matchesHead(scope, pr));
   };
-  // A squash merge does not put the original PR commits on the base branch.
-  // Compare the original first commit's parent, not today's base SHA or the
-  // closed PR's head SHA, which can change the apparent merge-base over time.
-  const sameStartingBasePr = async (scope, startingBaseSha) => {
+  // A squash merge leaves the old PR commits outside the base history. A
+  // reused branch name or fork point is therefore evidence to investigate,
+  // not by itself a reason to reject newly published work.
+  const closedStartingBasePrs = async (scope, startingBaseSha) => {
+    const historical = [];
     for (let page = 1; ; page++) {
       const query = new URLSearchParams({ state: 'closed', head: scope.qualifiedHead,
         per_page: '100', page: String(page) });
       const pulls = await scope.api(scope.root + '/pulls?' + query);
       for (const pr of pulls.filter(item => matchesHead(scope, item))) {
-        const commits = await scope.api(scope.root + '/pulls/' + pr.number + '/commits?per_page=1');
+        const commits = [];
+        for (let commitPage = 1; ; commitPage++) {
+          if (commitPage > 100) throw new Error('Cannot verify the complete commit history for PR #' + pr.number + '.');
+          const pageCommits = await scope.api(scope.root + '/pulls/' + pr.number
+            + '/commits?per_page=100&page=' + commitPage);
+          if (!Array.isArray(pageCommits) || (!pageCommits.length && commitPage === 1)) {
+            throw new Error('Cannot verify the commit history for PR #' + pr.number + '.');
+          }
+          commits.push(...pageCommits);
+          if (pageCommits.length < 100) break;
+        }
         const originalParent = commits[0]?.parents?.[0]?.sha;
-        // Never risk creating a duplicate when GitHub cannot establish
-        // where the historical PR started.
         if (!originalParent) throw new Error('Cannot verify the starting base for PR #' + pr.number + '.');
-        if (originalParent === startingBaseSha) return pr;
+        if (originalParent === startingBaseSha) historical.push({ pr, commits });
       }
-      if (pulls.length < 100) return undefined;
+      if (pulls.length < 100) return historical;
     }
   };
-  const newPrEligibility = async (scope, comparison, existing) => {
+  const allComparedCommits = async (scope, comparison, args) => {
+    const total = comparison.total_commits;
+    const commits = comparison.commits;
+    if (!Number.isSafeInteger(total) || total < 1 || !Array.isArray(commits) || !commits.length
+        || commits.length > total) throw new Error('Cannot verify the published branch commits.');
+    const full = [...commits];
+    // Context and creation both request 100 commits on the first comparison
+    // page. Do not accept a partial comparison as evidence of new work.
+    for (let page = 2; full.length < total; page++) {
+      if (page > 100) throw new Error('Cannot verify all published branch commits.');
+      const next = await scope.api(comparisonPath(scope, args) + '?per_page=100&page=' + page);
+      if (!Array.isArray(next.commits) || !next.commits.length) {
+        throw new Error('Cannot verify all published branch commits.');
+      }
+      full.push(...next.commits);
+      if (full.length > total) throw new Error('Inconsistent published branch commit count.');
+    }
+    if (new Set(full.map(commit => commit.sha)).size !== total
+        || full.some(commit => !/^[a-f0-9]{40}$/i.test(commit.sha || ''))) {
+      throw new Error('Cannot verify all published branch commits.');
+    }
+    return full;
+  };
+  const newPrEligibility = async (scope, comparison, existing, args) => {
     const startingBaseSha = comparison.merge_base_commit?.sha;
     if (!startingBaseSha) throw new Error('GitHub did not return the branch starting base; PR eligibility cannot be verified.');
     if (existing) return { allowed: false, reason: 'open-pr', startingBaseSha,
       pullRequest: summary(existing, scope) };
-    const previous = await sameStartingBasePr(scope, startingBaseSha);
-    if (previous) return { allowed: false, reason: 'same-starting-base', startingBaseSha,
-      pullRequest: summary(previous, scope) };
-    if (!comparison.ahead_by) return { allowed: false, reason: 'no-commits', startingBaseSha };
-    return { allowed: true, reason: 'new-starting-base', startingBaseSha };
+    if (!comparison.ahead_by || !comparison.files?.length) {
+      return { allowed: false, reason: 'no-commits', startingBaseSha };
+    }
+    const historical = await closedStartingBasePrs(scope, startingBaseSha);
+    if (!historical.length) return { allowed: true, reason: 'new-starting-base', startingBaseSha };
+    const published = await allComparedCommits(scope, comparison, args);
+    const previouslySubmitted = new Set(historical.flatMap(({ commits }) => commits.map(commit => commit.sha)));
+    if (published.some(commit => !previouslySubmitted.has(commit.sha))) {
+      return { allowed: true, reason: 'new-commits', startingBaseSha };
+    }
+    return { allowed: false, reason: 'same-starting-base', startingBaseSha,
+      pullRequest: summary(historical[0].pr, scope) };
   };
   const recordSource = async (root, pr, source, api = request) => {
     const comment = sourceComment(source);
@@ -172,7 +211,7 @@ export function createActions({ request = githubRequest,
       const head = await readHead(scope, args);
       const comparison = await scope.api(comparisonPath(scope, args) + '?per_page=100');
       const existing = await openPr(scope);
-      const newPullRequest = await newPrEligibility(scope, comparison, existing);
+      const newPullRequest = await newPrEligibility(scope, comparison, existing, args);
       if (scope.cross && comparison.head_commit?.sha !== head.sha) {
         throw new Error('The fork head changed during comparison. Read the comparison again.');
       }
@@ -212,12 +251,12 @@ export function createActions({ request = githubRequest,
           return { ...summary(pr, scope), existing: true,
             review, source: await provenance(scope.root, pr, args.source, scope.api) };
         }
-        const comparison = await scope.api(comparisonPath(scope, args));
-        const eligibility = await newPrEligibility(scope, comparison);
+        const comparison = await scope.api(comparisonPath(scope, args) + '?per_page=100');
+        const eligibility = await newPrEligibility(scope, comparison, undefined, args);
         if (!eligibility.allowed) {
           if (eligibility.reason === 'same-starting-base') {
             throw new Error('PR #' + eligibility.pullRequest.number
-              + ' already used this branch starting base. Create the branch again from a different base commit.');
+              + ' already contains all commits on this branch. Push new changes before opening another PR.');
           }
           throw new Error('The published head has no committed changes ahead of the base.');
         }
