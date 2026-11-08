@@ -10,11 +10,14 @@ import { draftSchema, outputSchema } from './draft-schema.js';
 import { loadPreferences } from './preferences.js';
 import { draftWithOllama } from './ollama.js';
 import { discoverCodexModel } from './codex-model.js';
+import { createPreviewActions } from './preview-sites.js';
 
 const inputSchema = z.object({
   repository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
   head: z.string().min(1).max(255), base: z.string().min(1).max(255).default('main'),
   headRepository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/).optional(),
+  previewZone: z.string().min(4).max(253).optional(),
+  previewNamespace: z.string().min(1).max(40).optional(),
   source: z.object({ kind: z.enum(['chatgpt', 'codex']), uuid: z.string().uuid(), url: z.string().url(),
     intentSummary: z.string().max(2000).optional() }).optional(),
   draftOnly: z.boolean().default(false),
@@ -70,13 +73,26 @@ export async function runLocalPullRequest(input, { actions = createActions(), dr
   const [owner, repo] = args.repository.split('/');
   const selection = { owner, repo, head: args.head, base: args.base,
     ...(args.headRepository ? { headRepository: args.headRepository } : {}) };
+  if (args.previewZone && (!args.headRepository || args.headRepository.toLowerCase() === args.repository.toLowerCase())) {
+    throw new Error('Preview Sites require an upstream destination and separate source fork.');
+  }
+  const withPreview = async result => {
+    if (!args.previewZone || !result.url) return result;
+    try {
+      const preview = await createPreviewActions({ actions }).prepare({ ...selection,
+        zone: args.previewZone, namespace: args.previewNamespace || 'preview' });
+      return { ...result, preview };
+    } catch (error) {
+      return { ...result, previewError: error.message };
+    }
+  };
   if ((!args.headRepository || args.headRepository.toLowerCase() === args.repository.toLowerCase())
       && args.head === args.base) throw new Error('Select a branch other than the PR base.');
   const context = await actions.context(selection);
   // Context callers need evidence, while publication callers reuse the PR
   // without invoking a model or issuing another create request.
   if (args.contextOnly) return context;
-  if (context.existingPullRequest) return { ...context.existingPullRequest, existing: true };
+  if (context.existingPullRequest) return withPreview({ ...context.existingPullRequest, existing: true });
   if (!context.aheadBy) throw new Error('Publish a branch with committed changes ahead of the base before requesting a PR.');
   // Browser drafts remain publishable after new commits; use the current head below.
   if (args.preparedDraft && !args.expectedHeadSha) throw new Error('Browser drafts require the verified head SHA.');
@@ -88,7 +104,8 @@ export async function runLocalPullRequest(input, { actions = createActions(), dr
   ].join('\n\n');
   const generated = draftSchema.parse(args.preparedDraft || await draft(prompt));
   if (args.draftOnly) return { ...generated, body: descriptionBody(generated.body), headSha: context.headSha, published: false };
-  return actions.create({ ...selection, ...generated, expectedHeadSha: context.headSha, source: args.source, draft: false });
+  return withPreview(await actions.create({ ...selection, ...generated,
+    expectedHeadSha: context.headSha, source: args.source, draft: false }));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(await realpath(process.argv[1])).href) {
