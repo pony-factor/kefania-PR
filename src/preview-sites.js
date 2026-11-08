@@ -103,14 +103,14 @@ export function createPreviewActions({ actions, fetchFn = fetch, env = process.e
       const page = await api('GET', zone, '?take=500&skip=' + skip);
       if (!Array.isArray(page.items)) throw new Error('Spaceship DNS listing had an unexpected response.');
       records.push(...page.items);
-      if (records.length >= (page.total ?? 0) || page.items.length < 500) return records;
+      if ((Number.isInteger(page.total) && records.length >= page.total) || page.items.length < 500) return records;
     }
     throw new Error('DNS zone is too large to verify record conflicts safely.');
   };
   return {
     async prepare(args) {
       const { identity, context } = await checked(args);
-      const sourceUrl = 'https://github.com/' + identity.source + '/tree/' + encodeURIComponent(args.head);
+      const sourceUrl = 'https://github.com/' + identity.source + '/tree/' + context.headSha;
       const instructions = [
         'Use @Sites in ChatGPT to create a NEW development preview website from the GitHub repository ' + identity.source + '.',
         'Use the published branch ' + args.head + ' at the exact commit ' + context.headSha + '; do not use the upstream main branch.',
