@@ -29,7 +29,7 @@ function setConnection(connection) {
     ? 'Connected as @' + identity + (provider === 'user' ? ' · your account' : provider === 'app' ? ' · GitHub App bot' : ' · gh CLI fallback')
     : 'Not connected — authorize on GitHub';
   byId('disconnect').hidden = provider !== 'user';
-  byId('connect').textContent = provider === 'app' ? 'Check GitHub setup' : 'Connect GitHub';
+  byId('connect').textContent = provider === 'user' ? 'Reconnect your account' : 'Connect your account';
   byId('connect-account').textContent = provider === 'user' ? 'Reconnect your account' : 'Connect your account';
   const missing = connection?.installations?.filter(item => item.missingPermissions?.length) || [];
   message('bot-access-message', missing.length
@@ -169,16 +169,9 @@ async function pollAuthorization() {
     message('connect-message', error.message, 'error');
   }
 }
-byId('connect').addEventListener('click', async () => {
-  if (currentConnection?.githubAuth !== 'app') {
-    byId('bot-setup').open = true;
-    byId('bot-setup').scrollIntoView({ block: 'center', behavior: 'smooth' });
-    message('bot-message', 'Select the App’s private-key PEM file, find its installations, then save the bot connection.');
-    return;
-  }
-  byId('connect').disabled = true;
-  try { await refreshRepositories(); }
-  finally { byId('connect').disabled = false; }
+byId('connect').addEventListener('click', () => {
+  // The primary connection is the user's GitHub App session, not the bot key.
+  byId('connect-account').click();
 });
 byId('connect-account').addEventListener('click', async () => {
   if (authorizationActive) { message('connect-message', 'Complete the current GitHub authorization first.'); return; }
@@ -268,7 +261,7 @@ byId('bot-save').addEventListener('click', async () => {
   try {
     const result = await api('bot/finish', {});
     setConnection(result.connection);
-    message('bot-message', 'Saved ' + result.bot.githubLogin + ' in macOS Keychain. New local PR runs use the bot; restart any running Kefania MCP server.', 'success');
+    message('bot-message', 'Saved ' + result.bot.githubLogin + ' in macOS Keychain. Automatic mode uses the bot only without a user connection; restart any running Kefania MCP server.', 'success');
     await refreshRepositories();
   } catch (error) { message('bot-message', error.message, 'error'); }
   finally { byId('bot-installations').hidden = true; button.disabled = false; }
