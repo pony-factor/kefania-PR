@@ -31,6 +31,14 @@ A connected, authorized **local** Kafania MCP client can:
 
 The GitHub-connected PR drafting and publishing tools remain independent; character lore and art are **never** added to PR titles, descriptions, comments or provenance.
 
+## Canonical appearance screencaps
+
+For on-screen characters, prefer **one to three verified animation frames** from named episodes in a dedicated `### In the show` section of the Markdown profile. Show the real character's appearance when identifiable; when only a crowd shot exists, describe its limitations rather than implying a close-up. An example is `ponies/g4-stallions/dark-moon.json` for *A Canterlot Wedding – Part 2* (S2E26).
+
+Embed each image using a **direct HTTPS image URL** wrapped in a link to its verified contextual image/post page (`[![Scene and character](https://host/image.jpg)](https://host/post)`). Add an episode caption and the correct rights attribution: a still from the television show is **not** fan art by the booru uploader. Do not confuse creator, uploader, and host. Preserve distinct source links for fan artworks elsewhere in the profile. Don't use a generic episode image that lacks a verified appearance, or invent a direct URL or attribution when a gallery lists only a filename. If a source image fails to resolve, link to the episode/character gallery without embedding a broken thumbnail. External image bytes remain on their hosts and are not copied into this repository.
+
+Screen appearance stills are **not** placed in the weekly-rotating `artwork` array; that feature is for selected attributed art. Unlike the featured art, the episode stills and their citations stay adjacent to the appearance narrative so readers can inspect visual evidence.
+
 ## Artwork rotation
 
 Store a small list of attributed, externally hosted HTTPS images in each record's `artwork` array, with `url`, `alt`, `credit`, and an optional source-page `source`. Kafania chooses a featured image each week using a stable per-character offset, so the art cycles over time while the text remains unchanged. Image URLs must remain valid and licensed/attributed appropriately; the system does not download or rehost image bytes or automatically claim any URL has been verified.
