@@ -4,6 +4,7 @@ import { githubRequest, githubCliRequest } from './github.js';
 import { loadPreferences, writingInstructions } from './preferences.js';
 import { inspectPublishedMerge, formatRegressionReview } from './regression-review.js';
 import { secretPath } from './safe-paths.js';
+import { registerPublishedStack } from './stack-registration.js';
 
 export const FOOTER = '';
 export const rules = async () => (await readFile(new URL('../PULL_REQUEST.md', import.meta.url), 'utf8')) + '\n\n' + writingInstructions(await loadPreferences());
@@ -156,6 +157,16 @@ export function createActions({ request = githubRequest,
   };
   const summary = (pr, scope) => ({ number: pr.number, url: pr.html_url, head: pr.head.ref,
     base: pr.base.ref, ...(scope.cross ? { repository: scope.target, headRepository: scope.source } : {}) });
+  const stackResult = async (scope, pr) => {
+    try {
+      return await registerPublishedStack({ api: scope.api, root: scope.root,
+        repository: scope.target, published: pr });
+    } catch (error) {
+      // The PR exists even if its optional native-stack link failed. Never
+      // repeat PR creation or silently claim a successful registration.
+      return { status: 'failed', reason: 'PR published; stack registration needs a separate retry: ' + error.message };
+    }
+  };
   const finalize = async (root, pr, body, api = request) => {
     try {
       await api(`${root}/pulls/${pr.number}`, { method: 'PATCH', body: { body } });
@@ -210,7 +221,8 @@ export function createActions({ request = githubRequest,
             review = { status: 'unavailable', reason: 'The current comparison could not be reviewed.' };
           }
           return { ...summary(pr, scope), existing: true,
-            review, source: await provenance(scope.root, pr, args.source, scope.api) };
+            review, source: await provenance(scope.root, pr, args.source, scope.api),
+            stack: await stackResult(scope, pr) };
         }
         const comparison = await scope.api(comparisonPath(scope, args));
         const eligibility = await newPrEligibility(scope, comparison);
@@ -234,14 +246,28 @@ export function createActions({ request = githubRequest,
         catch (error) {
           const existing = await openPr(scope).catch(() => undefined);
           if (existing) return { ...summary(existing, scope), existing: true,
-            source: await provenance(scope.root, existing, args.source, scope.api) };
+            source: await provenance(scope.root, existing, args.source, scope.api),
+            stack: await stackResult(scope, existing) };
           throw error;
         }
         const description = args.prompt === undefined ? { finalized: true }
           : await finalize(scope.root, pr, finalBody, scope.api);
         return { ...summary(pr, scope), existing: false, description,
           review: await regressionReview(scope, pr, comparison),
-          source: await provenance(scope.root, pr, args.source, scope.api) };
+          source: await provenance(scope.root, pr, args.source, scope.api),
+          stack: await stackResult(scope, pr) };
+      });
+    },
+    async stack(args) {
+      const scope = selection(args);
+      if (scope.cross) throw new Error('GitHub-native stacks do not support cross-fork pull requests.');
+      if (!Number.isSafeInteger(args.number) || args.number < 1) {
+        throw new Error('Specify the published PR number to register.');
+      }
+      return serial(scope.root + ':stack:' + args.number, async () => {
+        const published = await scope.api(scope.root + '/pulls/' + args.number);
+        if (published?.number !== args.number) throw new Error('GitHub returned a different PR.');
+        return { number: args.number, ...await stackResult(scope, published) };
       });
     },
     async comment(args) {
@@ -255,7 +281,7 @@ export function createActions({ request = githubRequest,
     },
     async status() {
       const identity = request.status ? await request.status() : { githubLogin: (await request('user')).login };
-      return { ready: true, ...identity, allowedRepositories, writes: ['create pull request', 'create upstream pull request from fork', 'add source comment', 'create issue'] };
+      return { ready: true, ...identity, allowedRepositories, writes: ['create pull request', 'register native pull request stack', 'create upstream pull request from fork', 'add source comment', 'create issue'] };
     },
     async issue(args) {
       const root = repository(args, allowedRepositories);

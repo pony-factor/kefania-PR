@@ -76,7 +76,20 @@ export async function runLocalPullRequest(input, { actions = createActions(), dr
   // Context callers need evidence, while publication callers reuse the PR
   // without invoking a model or issuing another create request.
   if (args.contextOnly) return context;
-  if (context.existingPullRequest) return { ...context.existingPullRequest, existing: true };
+  if (context.existingPullRequest) {
+    // Reopening a published PR from Sweetiebot should retry its native stack
+    // registration without drafting or publishing another PR. Context and
+    // draft-only requests remain read-only.
+    let stack;
+    if (!args.draftOnly && typeof actions.stack === 'function') {
+      try {
+        stack = await actions.stack({ owner, repo, number: context.existingPullRequest.number });
+      } catch (error) {
+        stack = { status: 'failed', reason: 'Existing PR preserved; native stack retry failed: ' + error.message };
+      }
+    }
+    return { ...context.existingPullRequest, existing: true, ...(stack ? { stack } : {}) };
+  }
   if (!context.aheadBy) throw new Error('Publish a branch with committed changes ahead of the base before requesting a PR.');
   // Browser drafts remain publishable after new commits; use the current head below.
   if (args.preparedDraft && !args.expectedHeadSha) throw new Error('Browser drafts require the verified head SHA.');

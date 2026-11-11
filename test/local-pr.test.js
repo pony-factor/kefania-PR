@@ -38,11 +38,13 @@ test('local drafter passes the verified head and generated text to the gh publis
   assert.equal(result.url, 'https://github.com/owner/repo/pull/1');
 });
 
-test('existing PR short-circuits both local drafting and browser context', async () => {
+test('existing PR short-circuits drafting and safely retries native stack linking', async () => {
   const existingPullRequest = { number: 42, url: 'https://github.com/owner/repo/pull/42', base: 'release', head: 'branch' };
+  const stackCalls = [];
   const actions = {
     async context() { return { aheadBy: 0, existingPullRequest }; },
     async create() { assert.fail('Do not publish a second PR'); },
+    async stack(input) { stackCalls.push(input); return { status: 'already-linked', stackNumber: 7 }; },
   };
   const draft = () => assert.fail('Do not start a model for an existing PR');
   const input = { repository: 'owner/repo', head: 'branch' };
@@ -51,6 +53,12 @@ test('existing PR short-circuits both local drafting and browser context', async
   const result = await runLocalPullRequest(input, { actions, draft });
   assert.equal(result.existing, true);
   assert.equal(result.url, existingPullRequest.url);
+  assert.equal(result.stack.status, 'already-linked');
+  assert.deepEqual(stackCalls, [{ owner: 'owner', repo: 'repo', number: 42 }]);
+  const draftOnly = await runLocalPullRequest({ ...input, draftOnly: true }, { actions, draft });
+  assert.equal(draftOnly.existing, true);
+  assert.equal(draftOnly.stack, undefined, 'Draft-only requests never register stacks');
+  assert.equal(stackCalls.length, 1, 'Context and draft-only requests must not write');
 });
 
 test('draft-only performs no write and returns an unadorned description', async () => {
