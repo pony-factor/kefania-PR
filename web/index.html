@@ -152,6 +152,38 @@
           <p class="subtle">Sweetiebot's existing New PR button and the MCP tools continue to use Kefania. The compact PR notice and optional post-publication pony profile in chat are unchanged.</p>
         </div>
       </section>
+      <section class="step" aria-labelledby="hosted-heading">
+        <div class="step-label">05 · Hosted web publishing</div>
+        <div class="step-content">
+          <h2 id="hosted-heading">Deploy Kefania's web authentication</h2>
+          <p class="subtle">Separate from local PR drafting. Host Kefania's existing OAuth MCP publisher on AWS App Runner so ChatGPT can publish finished branches as codex-pony[bot]. AWS usage is billed.</p>
+          <details id="hosted-setup">
+            <summary>Configure AWS deployment</summary>
+            <p class="subtle">Sign in locally with AWS CLI first. Create an App Runner GitHub source connection, put the GitHub OAuth secret and App PEM in AWS Secrets Manager, and grant the App Runner instance role access to those two secrets. Enter ARNs, never private keys. See <a href="https://github.com/pony-factor/kefania-PR/blob/main/HOSTING.md" target="_blank" rel="noopener noreferrer">hosting instructions</a>.</p>
+            <div class="fields">
+              <div><label for="hosted-region">AWS region</label><input id="hosted-region" value="us-east-1"></div>
+              <div><label for="hosted-service-name">Service name</label><input id="hosted-service-name" value="kefania-web"></div>
+            </div>
+            <label for="hosted-connection-arn">App Runner GitHub connection ARN</label><input id="hosted-connection-arn" autocomplete="off" spellcheck="false">
+            <label for="hosted-role-arn">Instance IAM role ARN</label><input id="hosted-role-arn" autocomplete="off" spellcheck="false">
+            <div class="fields">
+              <div><label for="hosted-client-id">GitHub OAuth Client ID</label><input id="hosted-client-id" autocomplete="off" spellcheck="false"></div>
+              <div><label for="hosted-app-id">GitHub App ID</label><input id="hosted-app-id" autocomplete="off" spellcheck="false"></div>
+            </div>
+            <label for="hosted-oauth-secret">OAuth client secret ARN (Secrets Manager)</label><input id="hosted-oauth-secret" autocomplete="off" spellcheck="false">
+            <label for="hosted-private-key">GitHub App PEM ARN (Secrets Manager)</label><input id="hosted-private-key" autocomplete="off" spellcheck="false">
+            <label for="hosted-users">Allowed numeric GitHub user IDs</label><input id="hosted-users" autocomplete="off" spellcheck="false">
+            <label for="hosted-repos">Allowed repositories (comma-separated owner/repo)</label><input id="hosted-repos" autocomplete="off" spellcheck="false">
+            <label for="hosted-redirects">Exact ChatGPT OAuth redirect URI(s)</label><input id="hosted-redirects" autocomplete="off" spellcheck="false">
+            <div class="actions"><button id="hosted-deploy" class="primary" type="button">Deploy to AWS</button></div>
+            <p class="subtle">Once AWS reports RUNNING, activate the service's assigned HTTPS origin. If a request timed out, inspect App Runner before retrying to avoid duplicate services.</p>
+            <label for="hosted-service-arn">Deployed App Runner service ARN</label><input id="hosted-service-arn" autocomplete="off" spellcheck="false" placeholder="Filled after deploy, or paste existing ARN">
+            <div class="actions"><button id="hosted-activate" class="secondary" type="button">Activate web OAuth</button></div>
+            <p id="hosted-message" class="message" role="status" aria-live="polite"></p>
+            <div id="hosted-output" class="integration-status" role="status" aria-live="polite"></div>
+          </details>
+        </div>
+      </section>
     </div>
     <footer>Runs on this computer · No website is published · No credentials shown in this page</footer>
   </main>

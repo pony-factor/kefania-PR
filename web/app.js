@@ -311,3 +311,39 @@ getConnection().catch(error => {
   message('connect-message', 'Setup could not load: ' + error.message, 'error');
   byId('connection-state').textContent = 'Setup unavailable';
 });
+
+
+const hostInput = id => byId('hosted-' + id).value.trim();
+byId('hosted-deploy').addEventListener('click', async () => {
+  if (!window.confirm('Create a billable AWS App Runner service?')) return;
+  const button = byId('hosted-deploy');
+  button.disabled = true;
+  message('hosted-message', 'Creating AWS service…');
+  try {
+    const result = await api('hosted/deploy', {
+      region: hostInput('region'), serviceName: hostInput('service-name'),
+      connectionArn: hostInput('connection-arn'), instanceRoleArn: hostInput('role-arn'),
+      clientId: hostInput('client-id'), appId: hostInput('app-id'),
+      clientSecretArn: hostInput('oauth-secret'), privateKeyArn: hostInput('private-key'),
+      userIds: hostInput('users'), repositories: hostInput('repos'), redirects: hostInput('redirects'),
+    });
+    byId('hosted-service-arn').value = result.serviceArn;
+    byId('hosted-output').textContent = 'Service ARN: ' + result.serviceArn;
+    message('hosted-message', 'Created. Wait for AWS App Runner status RUNNING, then activate.', 'success');
+  } catch (error) { message('hosted-message', error.message, 'error'); }
+  finally { button.disabled = false; }
+});
+byId('hosted-activate').addEventListener('click', async () => {
+  const button = byId('hosted-activate');
+  button.disabled = true;
+  message('hosted-message', 'Updating AWS OAuth origin…');
+  try {
+    const result = await api('hosted/activate', {
+      region: hostInput('region'), serviceArn: hostInput('service-arn'),
+    });
+    byId('hosted-output').textContent = 'MCP: ' + result.mcpUrl +
+      '\nGitHub App callback: ' + result.callbackUrl;
+    message('hosted-message', 'Activation requested. Wait for AWS to finish updating, then add the callback to GitHub.', 'success');
+  } catch (error) { message('hosted-message', error.message, 'error'); }
+  finally { button.disabled = false; }
+});
