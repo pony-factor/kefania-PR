@@ -13,6 +13,12 @@ const source = z.object({
   uuid: z.string().uuid(),
   url: z.string().url().max(2000),
   intentSummary: z.string().max(2000).optional(),
+  sharedUrl: z.string().url().max(2000).refine(value => {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname === 'chatgpt.com' && !url.username &&
+      !url.password && !url.port && !url.search && !url.hash &&
+      /^\/s\/cx_[A-Za-z0-9_-]{16,128}$/.test(url.pathname);
+  }, 'Use an explicitly created ChatGPT conversation share URL.').optional(),
 }).refine(value => {
   const url = new URL(value.url);
   if (url.protocol !== 'https:' || url.username || url.password || url.port) return false;

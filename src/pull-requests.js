@@ -27,9 +27,17 @@ export function descriptionBody(body) {
 function sourceComment(source) {
   const id = createHash('sha256').update(`${source.kind}:${source.uuid}`).digest('hex');
   const marker = `<!-- kefania-source:${id} -->`;
+  const links = source.kind === 'codex'
+    ? [
+        `[Open in Codex app](codex://threads/${source.uuid})`,
+        `[Open in VS Code](${source.url})`,
+      ]
+    : [`[Open in ChatGPT](${source.url})`];
+  // A public snapshot requires a separately supplied, explicitly shared URL.
+  if (source.sharedUrl) links.push(`[View shared conversation](${source.sharedUrl})`);
   return {
     marker,
-    body: `${marker}\nSource conversation: ${source.kind}\n\nUUID: ${source.uuid}\n\n${source.url}${source.intentSummary ? `\n\n${source.intentSummary}` : ''}`,
+    body: `${marker}\nSource conversation: ${source.kind}\n\nUUID: ${source.uuid}\n\n${links.map(link => '- ' + link).join('\n')}${source.intentSummary ? `\n\n${source.intentSummary}` : ''}`,
   };
 }
 
@@ -116,7 +124,17 @@ export function createActions({ request = githubRequest,
     for (let page = 1; ; page++) {
       const comments = await api(`${root}/issues/${pr.number}/comments?per_page=100&page=${page}`);
       const existing = comments.find(item => item.body?.startsWith(comment.marker));
-      if (existing) return { recorded: true, url: existing.html_url, existing: true };
+      if (existing) {
+        if (existing.body === comment.body || !Number.isSafeInteger(existing.id)) {
+          return { recorded: true, url: existing.html_url, existing: true };
+        }
+        // Upgrade an earlier plain-text comment or attach a newly shared URL;
+        // keep the same provenance marker and never post a duplicate.
+        const updated = await api(`${root}/issues/comments/${existing.id}`, {
+          method: 'PATCH', body: { body: comment.body }
+        });
+        return { recorded: true, url: updated.html_url, existing: true, updated: true };
+      }
       if (comments.length < 100) break;
     }
     const created = await api(`${root}/issues/${pr.number}/comments`, { method: 'POST', body: { body: comment.body } });

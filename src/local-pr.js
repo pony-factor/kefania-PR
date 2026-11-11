@@ -16,7 +16,13 @@ const inputSchema = z.object({
   head: z.string().min(1).max(255), base: z.string().min(1).max(255).default('main'),
   headRepository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/).optional(),
   source: z.object({ kind: z.enum(['chatgpt', 'codex']), uuid: z.string().uuid(), url: z.string().url(),
-    intentSummary: z.string().max(2000).optional() }).optional(),
+    intentSummary: z.string().max(2000).optional(),
+    sharedUrl: z.string().url().max(2000).refine(value => {
+      const url = new URL(value);
+      return url.protocol === 'https:' && url.hostname === 'chatgpt.com' && !url.username &&
+        !url.password && !url.port && !url.search && !url.hash &&
+        /^\/s\/cx_[A-Za-z0-9_-]{16,128}$/.test(url.pathname);
+    }, 'Use an explicitly created ChatGPT conversation share URL.').optional() }).optional(),
   draftOnly: z.boolean().default(false),
   contextOnly: z.boolean().default(false),
   expectedHeadSha: z.string().regex(/^[a-f0-9]{40}$/).optional(),
