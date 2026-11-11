@@ -42,6 +42,37 @@ test('app JWT exchange, shared refresh, and comment requests use installation id
   assert.equal(calls.filter(call => call.endpoint.endsWith('/access_tokens')).length, 2);
   assert.equal(JSON.parse(calls.find(call => call.endpoint.endsWith('/comments')).options.body).body, 'Comment');
 });
+test('422 authentication and branch errors name the operation without exposing credentials', async () => {
+  const failures = [];
+  const make = endpointToFail => createAppRequest({ env, fetchImpl: async (url, options) => {
+    const endpoint = url.replace('https://api.github.com/', '');
+    failures.push({ endpoint, method: options.method });
+    if (endpoint === endpointToFail) return { ok: false, status: 422, json: async () => ({
+      message: 'secret error payload must never surface' }) };
+    const value = endpoint === 'app' ? { slug: 'codex-pony' }
+      : endpoint.endsWith('/installation') ? { id: 456 }
+        : endpoint.endsWith('/access_tokens')
+          ? { token: 'fixture', expires_at: new Date(Date.now() + 3600000).toISOString() } : {};
+    return { ok: true, json: async () => value };
+  } });
+  await assert.rejects(make('app/installations/456/access_tokens')('repos/example/demo/pulls'), error => {
+    assert.equal(error.status, 422);
+    assert.match(error.message, /issuing an installation token/);
+    assert.match(error.message, /retry after other App checks settle/);
+    assert.doesNotMatch(error.message, /secret error payload/);
+    assert.doesNotMatch(error.message, /fixture/);
+    return true;
+  });
+  await assert.rejects(make('repos/example/demo/compare/main...draft')(
+    'repos/example/demo/compare/main...draft'), error => {
+    assert.equal(error.status, 422);
+    assert.match(error.message, /comparing the published branches/);
+    return true;
+  });
+  assert.equal(failures.filter(call => call.endpoint.endsWith('/access_tokens')).length, 2,
+    'Failed installation-token issuance must not be silently retried');
+});
+
 test('status discovers all installations rather than using the user endpoint', async () => {
   const { request, calls } = fixture();
   const status = await createActions({ request }).status();
