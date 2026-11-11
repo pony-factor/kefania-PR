@@ -149,8 +149,11 @@ export function createSetupServer({ github = githubRequest, authorization = gith
           || typeof input.base !== 'string' || !input.base.trim() || input.base.length > 255) {
           throw new Error('Enter a published head branch and a base branch.');
         }
+        const previewZone = typeof input.previewZone === 'string' ? input.previewZone.trim() : '';
+        if (previewZone && !upstream) throw new Error('Select an upstream destination for a preview Site.');
         const result = await draftPr({ repository, head: input.head.trim(), base: input.base.trim(),
-          ...(headRepository ? { headRepository } : {}), draftOnly: input.preview === true });
+          ...(headRepository ? { headRepository } : {}),
+          ...(previewZone ? { previewZone } : {}), draftOnly: input.preview === true });
         return json(200, result);
       }
       return json(404, { error: 'Not found.' });
