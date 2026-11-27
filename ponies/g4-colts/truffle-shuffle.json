@@ -1,0 +1,61 @@
+{
+  "version": 2,
+  "packId": "g4-colts",
+  "slug": "truffle-shuffle",
+  "name": "Truffle Shuffle",
+  "status": "draft",
+  "profile": "# Truffle Shuffle\n\nTruffle Shuffle is a recurring background Earth pony colt from *My Little Pony: Friendship Is Magic*, associated with Cheerilee’s Ponyville school class. He has a rounded build, a gray coat, dark brown mane and tail, blue eyes, and a knife-and-fork cutie mark. The [character reference](https://mlp.fandom.com/wiki/Truffle) also identifies him as Truffle and Teacher’s Pet.\n\n- **Naming:** Truffle Shuffle is a widely used fan identification. Gameloft game documentation records both Teacher’s Pet and Truffle; the precise origin of the fan name and an on-screen use of the name have not been established.\n- **Speaking status:** No individually attributed speaking role or voice actor was verified.\n- **Appearances:** In *Ponyville Confidential* he reads the Foal Free Press while wearing a red fez and rectangular glasses. He also appears among the students in *Family Appreciation Day* and *Twilight Time*, and in the crowd in *Slice of Life*. The linked production screencaps document these appearances.\n\nThe featured image is a cropped production screencap from *Ponyville Confidential*, credited to the Hasbro/DHX Media television production. Character-wiki and game-wiki details were checked against indexed text; the character wiki itself could not be opened directly.",
+  "aliases": [
+    "Truffle",
+    "Teacher's Pet"
+  ],
+  "appearance": "Gray Earth pony colt with a rounded build, dark brown mane and tail, blue eyes, and a knife-and-fork cutie mark.",
+  "speakingStatus": "No individually attributed dialogue or voice actor verified.",
+  "appearances": [
+    "Family Appreciation Day",
+    "Ponyville Confidential",
+    "Twilight Time",
+    "Slice of Life"
+  ],
+  "namingHistory": "Truffle Shuffle is a fan identification; Truffle and Teacher’s Pet appear in character and Gameloft game documentation. No on-screen naming verified.",
+  "sources": [
+    {
+      "url": "https://mlp.fandom.com/wiki/Truffle",
+      "label": "Character reference (indexed text)"
+    },
+    {
+      "url": "https://mlp-gameloft.fandom.com/wiki/Update_3.2",
+      "label": "Gameloft update 3.2: Teacher’s Pet"
+    },
+    {
+      "url": "https://mlp-gameloft.fandom.com/wiki/Tasks",
+      "label": "Gameloft tasks: Truffle"
+    },
+    {
+      "url": "https://twibooru.org/1386987",
+      "label": "Ponyville Confidential production screencap"
+    },
+    {
+      "url": "https://twibooru.org/33471",
+      "label": "Family Appreciation Day production screencap with caption"
+    },
+    {
+      "url": "https://twibooru.org/410943",
+      "label": "Twilight Time production screencap"
+    },
+    {
+      "url": "https://twibooru.org/700757",
+      "label": "Slice of Life production screencap with caption"
+    }
+  ],
+  "artwork": [
+    {
+      "url": "https://cdn.twibooru.org/img/view/2020/7/18/1386987__safe_derpibooru%2Bimport_screencap_truffle%2Bshuffle_earth%2Bpony_pony_ponyville%2Bconfidential_background%2Bpony_colt_cropped_fez_foal%2Bfree%2Bpress_glass.png",
+      "alt": "Truffle Shuffle reading the Foal Free Press in a red fez and glasses",
+      "credit": "My Little Pony: Friendship Is Magic — Hasbro/DHX Media, Ponyville Confidential",
+      "source": "https://twibooru.org/1386987"
+    }
+  ],
+  "createdAt": "2026-11-25T20:36:00.000Z",
+  "updatedAt": "2026-11-25T20:36:00.000Z"
+}

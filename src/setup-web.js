@@ -11,6 +11,7 @@ import { createBotSetup } from './bot-setup.js';
 import { defaultClientId } from './app-settings.js';
 import { ollamaModels } from './ollama.js';
 import { createSweetiebotSetup } from './sweetiebot-setup.js';
+import { hostedDeployment } from './aws-hosted-deploy.js';
 
 const allowed = (process.env.KEFANIA_ALLOWED_REPOSITORIES || '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
 const token = randomBytes(32).toString('hex');
@@ -38,7 +39,8 @@ async function readBody(req) {
 
 export function createSetupServer({ github = githubRequest, authorization = githubDeviceAuthorization,
   preferences = { load: loadPreferences, save: savePreferences }, draftPr = runLocalPullRequest,
-  botSetup = createBotSetup(), models = ollamaModels, sweetiebot = createSweetiebotSetup() } = {}) {
+  botSetup = createBotSetup(), models = ollamaModels, sweetiebot = createSweetiebotSetup(),
+  hosted = hostedDeployment() } = {}) {
   // A random CSRF token is returned only to same-origin callers; it is not a GitHub credential.
   const matchesToken = received => typeof received === 'string' && received.length === token.length
     && timingSafeEqual(Buffer.from(received), Buffer.from(token));
@@ -95,6 +97,11 @@ export function createSetupServer({ github = githubRequest, authorization = gith
         const action = url.pathname.split('/').pop();
         return json(200, await sweetiebot[action]({ repository: input.repository, checkoutPath: input.checkoutPath }));
       }
+      if (url.pathname === '/api/hosted/deploy' || url.pathname === '/api/hosted/activate') {
+        // Loopback host/origin and CSRF are already validated above.
+        const action = url.pathname.endsWith('/deploy') ? 'deploy' : 'activate';
+        return json(200, await hosted[action](input));
+      }
       if (url.pathname === '/api/ollama/models') {
         const settings = await preferences.load();
         return json(200, { models: await models({ ...settings.ollama,
@@ -149,8 +156,11 @@ export function createSetupServer({ github = githubRequest, authorization = gith
           || typeof input.base !== 'string' || !input.base.trim() || input.base.length > 255) {
           throw new Error('Enter a published head branch and a base branch.');
         }
+        const previewZone = typeof input.previewZone === 'string' ? input.previewZone.trim() : '';
+        if (previewZone && !upstream) throw new Error('Select an upstream destination for a preview Site.');
         const result = await draftPr({ repository, head: input.head.trim(), base: input.base.trim(),
-          ...(headRepository ? { headRepository } : {}), draftOnly: input.preview === true });
+          ...(headRepository ? { headRepository } : {}),
+          ...(previewZone ? { previewZone } : {}), draftOnly: input.preview === true });
         return json(200, result);
       }
       return json(404, { error: 'Not found.' });

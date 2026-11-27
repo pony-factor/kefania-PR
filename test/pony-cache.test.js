@@ -137,3 +137,18 @@ test('the checked-in catalog reference index retains both Leaf Litter posts', as
   assert.equal(migrated.length, 119);
   assert.equal(migrated.reduce((total, refs) => total + refs.length, 0), 120);
 });
+
+test('Bill Neigh uses one canonical profile for current and historical branch slugs', async () => {
+  const old = { packId: 'g4-stallions', slug: 'professorbill-neigh' };
+  const canonical = { packId: 'g4-stallions', slug: 'bill-neigh' };
+  assert.equal(ponyCacheKey(old), 'g4-stallions/bill-neigh');
+  assert.equal(ponyCacheKey(canonical), 'g4-stallions/bill-neigh');
+  const legacy = await readPonyCache(old);
+  const modern = await readPonyCache(canonical);
+  assert.equal(legacy.hit, true);
+  assert.equal(modern.hit, true);
+  assert.equal(modern.record.slug, 'bill-neigh');
+  assert.equal(modern.record.name, 'Bill Neigh');
+  assert.deepEqual(legacy.record, modern.record);
+  assert.equal(ponyCacheKey({ ...old, packId: 'g5-stallions' }), 'g5-stallions/professorbill-neigh');
+});

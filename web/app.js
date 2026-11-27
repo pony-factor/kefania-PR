@@ -283,7 +283,8 @@ async function runPr(preview) {
     const result = await api('pr', { repository: byId('default-repo').value,
       upstreamRepository: byId('upstream-repo').value.trim(),
       headRepository: byId('head-repository').value.trim(),
-      head: byId('head').value, base: byId('base').value, preview });
+      head: byId('head').value, base: byId('base').value,
+      previewZone: byId('preview-zone').value.trim(), preview });
     output.replaceChildren();
     if (preview) {
       const title = document.createElement('h3');
@@ -301,6 +302,17 @@ async function runPr(preview) {
       link.rel = 'noopener noreferrer';
       link.textContent = 'PR #' + result.number;
       output.append(link, document.createTextNode(result.existing ? ' · Already open' : ' · Ready for review'));
+      if (result.preview) {
+        const details = document.createElement('pre');
+        details.style.whiteSpace = 'pre-wrap';
+        details.textContent = 'ChatGPT Sites development preview: ' + result.preview.hostname
+          + '\n\n' + result.preview.sitesHandoff;
+        output.append(details);
+      } else if (result.previewError) {
+        const warning = document.createElement('p');
+        warning.textContent = 'PR created, but preview preparation needs attention: ' + result.previewError;
+        output.append(warning);
+      }
     }
   } catch (error) { output.textContent = error.message; }
   finally { button.disabled = false; }
@@ -310,4 +322,40 @@ byId('publish').addEventListener('click', () => runPr(false));
 getConnection().catch(error => {
   message('connect-message', 'Setup could not load: ' + error.message, 'error');
   byId('connection-state').textContent = 'Setup unavailable';
+});
+
+
+const hostInput = id => byId('hosted-' + id).value.trim();
+byId('hosted-deploy').addEventListener('click', async () => {
+  if (!window.confirm('Create a billable AWS App Runner service?')) return;
+  const button = byId('hosted-deploy');
+  button.disabled = true;
+  message('hosted-message', 'Creating AWS service…');
+  try {
+    const result = await api('hosted/deploy', {
+      region: hostInput('region'), serviceName: hostInput('service-name'),
+      connectionArn: hostInput('connection-arn'), instanceRoleArn: hostInput('role-arn'),
+      clientId: hostInput('client-id'), appId: hostInput('app-id'),
+      clientSecretArn: hostInput('oauth-secret'), privateKeyArn: hostInput('private-key'),
+      userIds: hostInput('users'), repositories: hostInput('repos'), redirects: hostInput('redirects'),
+    });
+    byId('hosted-service-arn').value = result.serviceArn;
+    byId('hosted-output').textContent = 'Service ARN: ' + result.serviceArn;
+    message('hosted-message', 'Created. Wait for AWS App Runner status RUNNING, then activate.', 'success');
+  } catch (error) { message('hosted-message', error.message, 'error'); }
+  finally { button.disabled = false; }
+});
+byId('hosted-activate').addEventListener('click', async () => {
+  const button = byId('hosted-activate');
+  button.disabled = true;
+  message('hosted-message', 'Updating AWS OAuth origin…');
+  try {
+    const result = await api('hosted/activate', {
+      region: hostInput('region'), serviceArn: hostInput('service-arn'),
+    });
+    byId('hosted-output').textContent = 'MCP: ' + result.mcpUrl +
+      '\nGitHub App callback: ' + result.callbackUrl;
+    message('hosted-message', 'Activation requested. Wait for AWS to finish updating, then add the callback to GitHub.', 'success');
+  } catch (error) { message('hosted-message', error.message, 'error'); }
+  finally { button.disabled = false; }
 });

@@ -161,7 +161,8 @@ test('automatic publisher-side hook links native stacks and returns verified mem
     if (endpoint === root + '/commits/child') return { sha: child.head.sha };
     if (endpoint.startsWith(root + '/compare/parent...child')) return {
       ahead_by: 1, head_commit: { sha: child.head.sha }, base_commit: { sha: parent.head.sha },
-      merge_base_commit: { sha: parent.head.sha }, files: [], total_commits: 1, commits: [{}]
+      merge_base_commit: { sha: parent.head.sha }, files: [{ filename: 'child.txt' }],
+      total_commits: 1, commits: [{ sha: child.head.sha }]
     };
     if (endpoint.startsWith(root + '/pulls?') && endpoint.includes('head=pony-factor%3Achild')) {
       return options.method ? [] : current.filter(pr => pr.number === 11);
@@ -189,7 +190,8 @@ test('newly published child PR uses the same automatic stack registration as reu
     if (endpoint === root + '/commits/child') return { sha: child.head.sha };
     if (endpoint.startsWith(root + '/compare/parent...child')) return {
       ahead_by: 1, head_commit: { sha: child.head.sha }, base_commit: { sha: parent.head.sha },
-      merge_base_commit: { sha: parent.head.sha }, files: [], total_commits: 1, commits: [{}]
+      merge_base_commit: { sha: parent.head.sha }, files: [{ filename: 'child.txt' }],
+      total_commits: 1, commits: [{ sha: child.head.sha }]
     };
     if (endpoint.startsWith(root + '/pulls?') && endpoint.includes('head=pony-factor%3Achild')) {
       return created ? [child] : [];

@@ -46,3 +46,49 @@ test('PR description is unchanged and does not inject an image', () => {
   assert.equal(description, 'Summary of work.');
   assert.equal(FOOTER, '');
 });
+
+
+test('Codex provenance emits named Markdown links and updates the original comment when shared', async () => {
+  const comments = [];
+  let posts = 0, patches = 0;
+  const existing = {
+    number: 42, html_url: 'https://github.com/example/demo/pull/42',
+    head: { ref: 'topic', label: 'example:topic' }, base: { ref: 'main' }
+  };
+  const request = async (path, options = {}) => {
+    if (path.startsWith('repos/example/demo/pulls?')) return [existing];
+    if (path.startsWith('repos/example/demo/issues/42/comments?')) return comments;
+    if (path === 'repos/example/demo/issues/42/comments' && options.method === 'POST') {
+      posts++;
+      const item = { id: 101, body: options.body.body, html_url: 'https://github.com/example/demo/pull/42#issuecomment-101' };
+      comments.push(item);
+      return item;
+    }
+    if (path === 'repos/example/demo/issues/comments/101' && options.method === 'PATCH') {
+      patches++;
+      comments[0].body = options.body.body;
+      return comments[0];
+    }
+    throw new Error('Unexpected request: ' + path);
+  };
+  const uuid = '01a16743-8a10-7f91-b014-27af201bf264';
+  const url = 'https://vscode.dev/redirect?url=' + encodeURIComponent(
+    `vscode://jfwooten4.scm-toolkit-workspace-search/codex/${uuid}`);
+  const source = { kind: 'codex', uuid, url };
+  const actions = createActions({ request });
+  await actions.create({ owner: 'example', repo: 'demo', head: 'topic', base: 'main', source });
+  assert.equal(posts, 1);
+  assert.match(comments[0].body, new RegExp(`\\[Open in Codex app\\]\\(codex://threads/${uuid}\\)`));
+  assert(comments[0].body.includes(`[Open in VS Code](${url})`));
+  assert(!comments[0].body.includes('View shared conversation'));
+  const sharedUrl = 'https://chatgpt.com/s/cx_6adb2bd8052c8191a37230ab0c89afde';
+  const updated = await actions.create({ owner: 'example', repo: 'demo', head: 'topic', base: 'main',
+    source: { ...source, sharedUrl } });
+  assert.equal(updated.source.updated, true);
+  assert.equal(posts, 1);
+  assert.equal(patches, 1);
+  assert(comments[0].body.includes(`[View shared conversation](${sharedUrl})`));
+  await actions.create({ owner: 'example', repo: 'demo', head: 'topic', base: 'main',
+    source: { ...source, sharedUrl } });
+  assert.equal(patches, 1, 'Identical provenance must not trigger a redundant edit');
+});
