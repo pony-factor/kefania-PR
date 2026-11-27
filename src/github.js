@@ -46,6 +46,19 @@ export function githubCliRequest(endpoint, { method = 'GET', body } = {}) {
   });
 }
 
+// Describe only the GitHub operation, never the URL, token, request body, or
+// GitHub's unchecked error message. The latter can contain user-controlled data.
+function appOperation(endpoint) {
+  if (endpoint === 'app') return 'identifying codex-pony';
+  if (/^app\/installations\/\d+\/access_tokens$/.test(endpoint)) return 'issuing an installation token';
+  if (/^repos\/[^/]+\/[^/]+\/installation$/.test(endpoint)) return 'checking the repository installation';
+  if (/\/compare\//.test(endpoint)) return 'comparing the published branches';
+  if (/\/pulls\/\d+\/commits/.test(endpoint)) return 'checking prior PR commits';
+  if (/\/pulls(?:\?|$)/.test(endpoint)) return 'checking pull requests';
+  if (/\/commits\//.test(endpoint)) return 'reading the published branch';
+  return 'accessing GitHub';
+}
+
 // Credentials are supplied by the process environment, never read from files.
 export function createAppRequest({ env = process.env, fetchImpl = fetch, now = Date.now } = {}) {
   let appPromise;
@@ -61,8 +74,19 @@ export function createAppRequest({ env = process.env, fetchImpl = fetch, now = D
       });
     } catch { throw new Error('GitHub App request failed or timed out. Check whether the write succeeded before retrying.'); }
     if (!response.ok) {
-      const error = new Error(`GitHub App request failed (HTTP ${response.status}). Check codex-pony installation access and permissions.`);
+      const operation = appOperation(endpoint);
+      const rejectedToken = response.status === 422 && operation === 'issuing an installation token';
+      const rejectedRead = response.status === 422 && method === 'GET';
+      const hint = rejectedToken
+        ? ' GitHub rejected token issuance; verify codex-pony permissions, then retry after other App checks settle.'
+        : rejectedRead
+          ? ' Verify the remote branches and repository access; repeated checks may also trigger GitHub validation limits.'
+          : ' Check codex-pony installation access and permissions.';
+      // Keep GitHub's free-form error body out of messages: it can contain
+      // repository names, input values, or other data that should not be logged.
+      const error = new Error(`GitHub App request failed (HTTP ${response.status}) while ${operation}.${hint}`);
       error.status = response.status;
+      error.operation = operation;
       throw error;
     }
     try { return await response.json(); }
