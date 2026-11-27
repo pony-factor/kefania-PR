@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { createActions, rules } from './pull-requests.js';
 import { readPonyCache, listPonyProfiles, curatePonyProfile } from './pony-cache.js';
+import { createPreviewActions } from './preview-sites.js';
 
 const component = z.string().min(1).max(100).regex(/^[A-Za-z0-9_.-]+$/);
 const ref = z.string().min(1).max(255).refine(value => !/[\s\x00-\x1f:?*\[\\~^]/.test(value) && !value.includes('..') && !value.startsWith('-'), 'Use a branch name without an owner prefix or revision expression.');
@@ -13,12 +14,23 @@ const source = z.object({
   uuid: z.string().uuid(),
   url: z.string().url().max(2000),
   intentSummary: z.string().max(2000).optional(),
+  sharedUrl: z.string().url().max(2000).refine(value => {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname === 'chatgpt.com' && !url.username &&
+      !url.password && !url.port && !url.search && !url.hash &&
+      /^\/s\/cx_[A-Za-z0-9_-]{16,128}$/.test(url.pathname);
+  }, 'Use an explicitly created ChatGPT conversation share URL.').optional(),
 }).refine(value => {
   const url = new URL(value.url);
   if (url.protocol !== 'https:' || url.username || url.password || url.port) return false;
   if (value.kind === 'chatgpt') return url.hostname === 'chatgpt.com' && ['/c/', '/uc/'].some(prefix => url.pathname === prefix + value.uuid);
   return url.hostname === 'vscode.dev' && url.pathname === '/redirect' && url.searchParams.get('url') === `vscode://jfwooten4.scm-toolkit-workspace-search/codex/${value.uuid}`;
 }, 'Source must link to the supplied conversation UUID.');
+
+const previewParams = { ...selection, zone: z.string().min(4).max(253),
+  namespace: z.string().min(1).max(40).default('preview') };
+const previewRecords = z.array(z.object({ type: z.enum(['CNAME', 'TXT']), name: z.string().min(1).max(253),
+  value: z.string().min(1).max(4096), ttl: z.number().int().min(60).max(3600).optional() })).min(1).max(10);
 
 const ponyIdentity = z.object({
   packId: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,127}$/),
@@ -46,10 +58,12 @@ export const contextInputSchema = z.object(selection);
 export const publishInputSchema = z.object({ ...selection, expectedHeadSha: z.string().regex(/^[a-f0-9]{40}$/i),
   title: z.string().trim().min(1).max(256), body: z.string().trim().min(1).max(60000),
   prompt: z.string().min(1).max(60000).optional().describe('Original user prompt, preserved verbatim in GitHub edit history when supplied. This is published text; include only content the user authorized for GitHub.'),
-  draft: z.boolean().default(false), maintainerCanModify: z.boolean().default(true), source: source.optional() });
+  draft: z.boolean().default(false), maintainerCanModify: z.boolean().default(true), source: source.optional(),
+  previewZone: z.string().min(4).max(253).optional(), previewNamespace: z.string().min(1).max(40).optional() });
 
 export function createMcpServer({ actions = createActions() } = {}) {
   const server = new McpServer({ name: 'codex-drafter', version: '0.1.0' }, { maxToolInputElements: 100 });
+  const previews = createPreviewActions({ actions });
   const call = action => async args => {
     try {
       const result = await action(args);
@@ -75,7 +89,15 @@ export function createMcpServer({ actions = createActions() } = {}) {
     description: 'Publish a diff-grounded PR in owner/repo, optionally from the headRepository fork. Read context first and supply its headSha as expectedHeadSha. Reuses an existing open PR, appends the description attribution exactly once, and records supplied source metadata as a separate comment. Never commits, pushes, or merges. The source or stack result may report a post-publication failure even though PR creation succeeded. For already-created PRs retry stack linking via github_register_pull_request_stack.',
     inputSchema: publishInputSchema.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  }, call(actions.create));
+  }, call(async args => {
+    const result = await actions.create(args);
+    if (!args.previewZone || !result.url) return result;
+    // A PR has already been published. Never turn preview preparation errors
+    // into apparent PR creation failures that could trigger duplicate writes.
+    try { return { ...result, preview: await previews.prepare({ ...args,
+      zone: args.previewZone, namespace: args.previewNamespace || 'preview' }) }; }
+    catch (error) { return { ...result, previewError: error.message }; }
+  }));
   server.registerTool('github_register_pull_request_stack', {
     description: 'Register an existing same-repository PR and its verified linear ancestors as a GitHub-native stack, or append it to the verified top of an existing stack. Safe to retry after publication. Never creates PRs, retargets branches, or rewrites history. Returns an explicit skipped or failed status when branches fork or do not qualify.',
     inputSchema: { owner: component, repo: component, number: z.number().int().positive() },
@@ -94,6 +116,17 @@ export function createMcpServer({ actions = createActions() } = {}) {
       assignees: z.array(component).max(10).optional() },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   }, call(actions.issue));
+  server.registerTool('github_prepare_preview_site', {
+    description: 'Verify an existing upstream PR and return an exact-commit ChatGPT Sites handoff for a unique branch.repo.preview.domain hostname. Does not deploy anything.',
+    inputSchema: previewParams, annotations: readOnly,
+  }, call(previews.prepare));
+  server.registerTool('github_publish_preview_dns', {
+    description: 'After separate approval, publish exact Sites-provided CNAME/TXT DNS records into an allowlisted Spaceship zone. Requires the unchanged PR head and a real Sites URL. Does not overwrite records or claim Site deployment.',
+    inputSchema: { ...previewParams, expectedHeadSha: z.string().regex(/^[a-f0-9]{40}$/i),
+      siteUrl: z.string().url().startsWith('https://'), records: previewRecords,
+      approved: z.literal(true).describe('Set only after the user approves the exact public DNS changes.') },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  }, call(previews.publishDns));
   server.registerTool('pony_get_profile', {
     description: 'Read a permanent curated pony record from Kefania/ponies with revision and this week’s featured artwork. A miss means the character has not been recorded; there is no expiry.',
     inputSchema: { pony: ponyIdentity }, annotations: { ...readOnly, openWorldHint: false },
@@ -111,6 +144,12 @@ export function createMcpServer({ actions = createActions() } = {}) {
     inputSchema: ponyCuration,
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   }, call(async ({ pony, ...details }) => curatePonyProfile(pony, details)));
+  server.registerPrompt('publish_preview_site', {
+    description: 'Prepare a ChatGPT Sites development deployment for a verified upstream PR, then connect its DNS through Spaceship.',
+    argsSchema: previewParams,
+  }, async args => ({ messages: [{ role: 'user', content: { type: 'text', text:
+    'First call github_prepare_preview_site with ' + JSON.stringify(args) + '. Use its exact SHA and ChatGPT Sites handoff. Use @Sites in ChatGPT to build and save a private version for review. Only after approval, deploy and enable public sharing in Sites. Get the exact custom-domain CNAME/TXT records from the Site settings. Request separate explicit approval for the records, then call github_publish_preview_dns with the expected head SHA, real *.chatgpt.site URL and exact records. Do not guess DNS values or claim deployment without Sites confirmation.'
+  } }] }));
   server.registerPrompt('curate_pony', {
     description: 'Guide research and human review of a permanent pony profile, including optional art rotation.',
     argsSchema: { packId: z.string(), slug: z.string() },

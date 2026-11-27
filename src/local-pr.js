@@ -10,13 +10,22 @@ import { draftSchema, outputSchema } from './draft-schema.js';
 import { loadPreferences } from './preferences.js';
 import { draftWithOllama } from './ollama.js';
 import { discoverCodexModel } from './codex-model.js';
+import { createPreviewActions } from './preview-sites.js';
 
 const inputSchema = z.object({
   repository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
   head: z.string().min(1).max(255), base: z.string().min(1).max(255).default('main'),
   headRepository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/).optional(),
+  previewZone: z.string().min(4).max(253).optional(),
+  previewNamespace: z.string().min(1).max(40).optional(),
   source: z.object({ kind: z.enum(['chatgpt', 'codex']), uuid: z.string().uuid(), url: z.string().url(),
-    intentSummary: z.string().max(2000).optional() }).optional(),
+    intentSummary: z.string().max(2000).optional(),
+    sharedUrl: z.string().url().max(2000).refine(value => {
+      const url = new URL(value);
+      return url.protocol === 'https:' && url.hostname === 'chatgpt.com' && !url.username &&
+        !url.password && !url.port && !url.search && !url.hash &&
+        /^\/s\/cx_[A-Za-z0-9_-]{16,128}$/.test(url.pathname);
+    }, 'Use an explicitly created ChatGPT conversation share URL.').optional() }).optional(),
   draftOnly: z.boolean().default(false),
   contextOnly: z.boolean().default(false),
   expectedHeadSha: z.string().regex(/^[a-f0-9]{40}$/).optional(),
@@ -70,6 +79,19 @@ export async function runLocalPullRequest(input, { actions = createActions(), dr
   const [owner, repo] = args.repository.split('/');
   const selection = { owner, repo, head: args.head, base: args.base,
     ...(args.headRepository ? { headRepository: args.headRepository } : {}) };
+  if (args.previewZone && (!args.headRepository || args.headRepository.toLowerCase() === args.repository.toLowerCase())) {
+    throw new Error('Preview Sites require an upstream destination and separate source fork.');
+  }
+  const withPreview = async result => {
+    if (!args.previewZone || !result.url) return result;
+    try {
+      const preview = await createPreviewActions({ actions }).prepare({ ...selection,
+        zone: args.previewZone, namespace: args.previewNamespace || 'preview' });
+      return { ...result, preview };
+    } catch (error) {
+      return { ...result, previewError: error.message };
+    }
+  };
   if ((!args.headRepository || args.headRepository.toLowerCase() === args.repository.toLowerCase())
       && args.head === args.base) throw new Error('Select a branch other than the PR base.');
   const context = await actions.context(selection);
@@ -77,18 +99,18 @@ export async function runLocalPullRequest(input, { actions = createActions(), dr
   // without invoking a model or issuing another create request.
   if (args.contextOnly) return context;
   if (context.existingPullRequest) {
-    // Reopening a published PR from Sweetiebot should retry its native stack
-    // registration without drafting or publishing another PR. Context and
-    // draft-only requests remain read-only.
+    // Reopening a published same-repository PR retries stack registration
+    // without drafting or publishing another PR. Draft-only stays read-only.
     let stack;
-    if (!args.draftOnly && typeof actions.stack === 'function') {
+    const sameRepository = !args.headRepository || args.headRepository.toLowerCase() === args.repository.toLowerCase();
+    if (!args.draftOnly && sameRepository && typeof actions.stack === 'function') {
       try {
         stack = await actions.stack({ owner, repo, number: context.existingPullRequest.number });
       } catch (error) {
         stack = { status: 'failed', reason: 'Existing PR preserved; native stack retry failed: ' + error.message };
       }
     }
-    return { ...context.existingPullRequest, existing: true, ...(stack ? { stack } : {}) };
+    return withPreview({ ...context.existingPullRequest, existing: true, ...(stack ? { stack } : {}) });
   }
   if (!context.aheadBy) throw new Error('Publish a branch with committed changes ahead of the base before requesting a PR.');
   // Browser drafts remain publishable after new commits; use the current head below.
@@ -101,7 +123,8 @@ export async function runLocalPullRequest(input, { actions = createActions(), dr
   ].join('\n\n');
   const generated = draftSchema.parse(args.preparedDraft || await draft(prompt));
   if (args.draftOnly) return { ...generated, body: descriptionBody(generated.body), headSha: context.headSha, published: false };
-  return actions.create({ ...selection, ...generated, expectedHeadSha: context.headSha, source: args.source, draft: false });
+  return withPreview(await actions.create({ ...selection, ...generated,
+    expectedHeadSha: context.headSha, source: args.source, draft: false }));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(await realpath(process.argv[1])).href) {
