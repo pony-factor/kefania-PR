@@ -4,7 +4,7 @@ import { AccessDeniedError, InvalidGrantError, InvalidRequestError, InvalidScope
 
 const random = () => randomBytes(32).toString('base64url');
 const hash = value => createHash('sha256').update(value).digest('base64url');
-export const hostedScopes = ['kefania:read', 'kefania:publish'];
+export const hostedScopes = ['kefania:read', 'kefania:publish', 'kefania:redirect'];
 
 // Ephemeral, bounded OAuth state. Restarting the host requires reconnecting clients.
 function expiringStore(now, capacity = 1000) {
@@ -40,7 +40,7 @@ export function createHostedOAuth({ publicUrl, clientId, clientSecret, allowedUs
   const clients = expiringStore(now), pending = expiringStore(now), codes = expiringStore(now);
   const sessions = expiringStore(now), access = expiringStore(now), refresh = expiringStore(now);
   const scopes = requested => {
-    const value = requested?.length ? requested : hostedScopes;
+    const value = requested?.length ? requested : ['kefania:read', 'kefania:publish'];
     if (value.some(scope => !hostedScopes.includes(scope))) throw new InvalidScopeError('Unsupported Kefania scope.');
     return [...new Set(value)];
   };

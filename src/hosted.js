@@ -6,6 +6,7 @@ import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from '@modelconte
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import { createHostedOAuth, hostedScopes } from './hosted-oauth.js';
 import { createAppRequest } from './github.js';
+import { verifiedActor, validateRedirect, writeRedirect } from './redirect-write.js';
 import { createActions, rules } from './pull-requests.js';
 import { createMcpServer, contextInputSchema, publishInputSchema } from './server.js';
 
@@ -49,7 +50,8 @@ export function createHostedApp({ publicUrl, clientId, clientSecret, allowedUser
     throw new Error('Hosted mode requires GitHub App credentials in the host secret environment.');
   }
   // Explicit App request: never select user/gh authentication or local model drafting.
-  const publisher = actions || createActions({ allowedRepositories, request: createAppRequest({ env, fetchImpl }) });
+  const appRequest = createAppRequest({ env, fetchImpl });
+  const publisher = actions || createActions({ allowedRepositories, request: appRequest });
   const app = createMcpExpressApp({ host, allowedHosts: [origin.hostname, '127.0.0.1', 'localhost'] });
   app.disable('x-powered-by');
   app.use((_req, res, next) => {
@@ -91,6 +93,41 @@ export function createHostedApp({ publicUrl, clientId, clientSecret, allowedUser
   };
   app.post('/api/context', rest(contextInputSchema, 'context'));
   app.post('/api/pull-requests', rest(publishInputSchema, 'create'));
+  // Separate opt-in capability; no PR/issue or generic write endpoint.
+  const redirectAttempts = new Map();
+  let redirectBusy = false;
+  const actorFor = req => verifiedActor({ auth: req.auth, oauth: provider, allowedRepositories });
+  const enabled = () => env.KEFANIA_ENABLE_WOOTEN_REDIRECTS === '1';
+  app.get('/api/wooten-redirects/session', async (req, res) => {
+    if (!enabled()) return res.status(503).json({ error: 'Redirect saves are not enabled on the runner.' });
+    try {
+      const actor = await actorFor(req);
+      await appRequest.redirectWriter();
+      res.json({ login: actor.login });
+    } catch {
+      res.status(403).json({ error: 'GitHub write access, a verified nonprivate author email, and codex-pony Contents write permission are required.' });
+    }
+  });
+  app.post('/api/wooten-redirects', async (req, res) => {
+    if (!enabled()) return res.status(503).json({ error: 'Redirect saves are not enabled on the runner.' });
+    let actor, input;
+    try { actor = await actorFor(req); input = validateRedirect(req.body); }
+    catch { return res.status(400).json({ error: 'Invalid redirect or insufficient GitHub authorization.' }); }
+    const now = Date.now();
+    for (const [id, at] of redirectAttempts) if (now - at > 60000) redirectAttempts.delete(id);
+    if (redirectBusy || redirectAttempts.has(actor.id)) return res.status(429).json({ error: 'Another save is in progress or you have saved recently. Try again in one minute.' });
+    redirectBusy = true;
+    redirectAttempts.set(actor.id, now);
+    try {
+      const request = await appRequest.redirectWriter();
+      const result = await writeRedirect({ request, actor, input, reauthorize: () => actorFor(req) });
+      console.info('Wooten redirect saved', JSON.stringify({ userId: actor.id, sha: result.sha }));
+      res.json(result);
+    } catch (error) {
+      const safe = /^(Shortlink already exists|Reserved shortlink key|Main changed|Main branch has protection|Save outcome requires verification|codex-pony needs Contents write permission)/.test(error.message);
+      res.status(error.commitSha ? 409 : 400).json({ error: safe ? error.message : 'Redirect save failed before confirmation. Check runner permissions, branch rules and author attribution.', ...(error.commitSha ? { sha: error.commitSha } : {}) });
+    } finally { redirectBusy = false; }
+  });
   app.post('/mcp', async (req, res) => {
     const server = createMcpServer({ actions: forRequest(req) });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
