@@ -162,6 +162,24 @@ export function createAppRequest({ env = process.env, fetchImpl = fetch, now = D
     }
     return installedRequest(id, endpoint, options);
   };
+  // Shortlink writes use a fresh, repository-scoped installation token, never the PR publisher's broad cached token.
+  request.redirectWriter = async () => {
+    await app();
+    const root = 'repos/JFWooten4/JFWooten4';
+    const installation = await api(root + '/installation', jwt());
+    if (installation.suspended_at || installation.permissions?.contents !== 'write') {
+      throw new Error('codex-pony needs Contents write permission for Wooten Link.');
+    }
+    const info = await request(root);
+    const issued = await api('app/installations/' + installation.id + '/access_tokens', jwt(), {
+      method: 'POST', body: { repository_ids: [info.id], permissions: { contents: 'write', metadata: 'read' } }
+    });
+    if (!issued.token || issued.permissions?.contents !== 'write') throw new Error('Repository-scoped write token unavailable.');
+    return (endpoint, options) => {
+      if (endpoint !== 'graphql' && endpoint !== root && !endpoint.startsWith(root + '/')) throw new Error('Invalid redirect repository.');
+      return api(endpoint, issued.token, options);
+    };
+  };
   request.installations = async () => {
     await app();
     const installations = [];

@@ -101,3 +101,7 @@ Local tests cover OAuth over HTTP, a real MCP client, and bot API publication us
 [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
 
 [Codex cloud environment configuration](https://learn.chatgpt.com/docs/environments/cloud-environments)
+
+## Optional Wooten Link redirect runner
+
+Set `KEFANIA_ENABLE_WOOTEN_REDIRECTS=1` only after adding `JFWooten4/JFWooten4` to the allowed repositories, granting codex-pony Contents write on that repository and read access to authenticated users' email addresses, and configuring the Wooten Link exact OAuth callback in `KEFANIA_OAUTH_REDIRECT_URIS`. The website is a server-side OAuth client requesting `kefania:read kefania:redirect`, never the PR publish scope. `GET /api/wooten-redirects/session` checks user and installation eligibility; `POST /api/wooten-redirects` accepts only key, href and optional comment. The runner uses a fresh repository-scoped App token, refuses protected or ruled branches, verifies author/committer and blame before attempting a non-force update, and checks the pushed tree and blame afterward. No private author email is published. An uncertain push is reported with the candidate SHA, not retried. The service is single-instance, with a one-minute per-user save limit. Live App permissions, GitHub attribution and pre-push blame support must be verified before production enablement.
