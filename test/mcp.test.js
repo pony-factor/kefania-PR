@@ -13,7 +13,7 @@ test('stdio handshake, tool discovery, and canonical instructions', async () => 
     await client.connect(transport);
     assert.equal(client.getServerVersion().name, 'codex-drafter');
     const { tools } = await client.listTools();
-    for (const name of ['github_get_pull_request_context', 'github_create_pull_request', 'github_comment_pull_request_source', 'github_create_issue']) {
+    for (const name of ['github_get_pull_request_context', 'github_create_pull_request', 'github_register_pull_request_stack', 'github_comment_pull_request_source', 'github_create_issue']) {
       assert(tools.some(tool => tool.name === name));
     }
     const rules = await client.callTool({ name: 'kefania_drafting_rules', arguments: {} });
