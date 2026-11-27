@@ -283,7 +283,8 @@ async function runPr(preview) {
     const result = await api('pr', { repository: byId('default-repo').value,
       upstreamRepository: byId('upstream-repo').value.trim(),
       headRepository: byId('head-repository').value.trim(),
-      head: byId('head').value, base: byId('base').value, preview });
+      head: byId('head').value, base: byId('base').value,
+      previewZone: byId('preview-zone').value.trim(), preview });
     output.replaceChildren();
     if (preview) {
       const title = document.createElement('h3');
@@ -301,6 +302,17 @@ async function runPr(preview) {
       link.rel = 'noopener noreferrer';
       link.textContent = 'PR #' + result.number;
       output.append(link, document.createTextNode(result.existing ? ' · Already open' : ' · Ready for review'));
+      if (result.preview) {
+        const details = document.createElement('pre');
+        details.style.whiteSpace = 'pre-wrap';
+        details.textContent = 'ChatGPT Sites development preview: ' + result.preview.hostname
+          + '\n\n' + result.preview.sitesHandoff;
+        output.append(details);
+      } else if (result.previewError) {
+        const warning = document.createElement('p');
+        warning.textContent = 'PR created, but preview preparation needs attention: ' + result.previewError;
+        output.append(warning);
+      }
     }
   } catch (error) { output.textContent = error.message; }
   finally { button.disabled = false; }

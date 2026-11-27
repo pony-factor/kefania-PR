@@ -146,6 +146,10 @@
             <div><label for="head">Published branch</label><input id="head" type="text" placeholder="my-feature"></div>
             <div><label for="base">Base branch</label><input id="base" type="text" value="main"></div>
           </div>
+          <div class="fields">
+            <div><label for="preview-zone">ChatGPT Sites preview DNS zone (optional, upstream PRs)</label><input id="preview-zone" type="text" placeholder="example.com" spellcheck="false"></div>
+          </div>
+          <p class="subtle">After PR publication, Kefania can prepare a branch.repo.preview.example.com Sites handoff. Site deployment and public DNS require separate approval; no DNS changes happen here.</p>
           <div class="actions"><button type="button" id="preview" class="secondary">Preview description</button>
             <button type="button" id="publish" class="primary">Publish ready-for-review PR</button></div>
           <div id="pr-result" class="result" role="status" aria-live="polite"></div>

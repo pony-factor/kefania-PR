@@ -92,3 +92,55 @@ test('browser context and prepared drafts never invoke Codex and publish against
   assert.equal(result.published, true);
   assert.equal(writes, 2);
 });
+
+
+test('local upstream publication exposes an immutable Sites handoff without writing DNS', async () => {
+  const sha = 'a'.repeat(40);
+  const existingPullRequest = { url: 'https://github.com/upstream/project/pull/7', number: 7 };
+  let requests = 0;
+  const actions = {
+    async context() {
+      requests++;
+      return requests === 1
+        ? { aheadBy: 1, headSha: sha, files: [] }
+        : { aheadBy: 1, headSha: sha, existingPullRequest, files: [] };
+    },
+    async create() { return existingPullRequest; },
+  };
+  const result = await runLocalPullRequest({ repository: 'upstream/project',
+    headRepository: 'person/project', head: 'feature/test', previewZone: 'example.com' }, {
+    actions, async draft() { return { title: '🧪 Preview', body: 'Preview the branch.' }; },
+  });
+  assert.equal(result.url, existingPullRequest.url);
+  assert.equal(result.preview.headSha, sha);
+  assert.match(result.preview.hostname, /\.project\.preview\.example\.com$/);
+  assert.equal(result.preview.siteDeployed, false);
+  assert.equal(result.preview.dnsPublished, false);
+  assert.equal(requests, 2);
+});
+
+test('local runner rejects preview zone on non-upstream PR before any GitHub write', async () => {
+  const actions = { async context() { assert.fail('Invalid preview must not call GitHub'); },
+    async create() { assert.fail('Invalid preview must not create PR'); } };
+  await assert.rejects(runLocalPullRequest({
+    repository: 'owner/project', head: 'feature', previewZone: 'example.com',
+  }, { actions }), /upstream destination/);
+});
+
+test('Sites handoff failure does not hide an already published upstream PR', async () => {
+  let requests = 0;
+  const actions = {
+    async context() {
+      requests++;
+      return requests === 1 ? { aheadBy: 1, headSha: 'a'.repeat(40) }
+        : { aheadBy: 1, headSha: 'b'.repeat(40) };
+    },
+    async create() { return { url: 'https://github.com/upstream/project/pull/8' }; },
+  };
+  const result = await runLocalPullRequest({
+    repository: 'upstream/project', headRepository: 'person/project',
+    head: 'branch', previewZone: 'example.com',
+  }, { actions, async draft() { return { title: '🧪 Preview', body: 'Explain the change.' }; } });
+  assert.match(result.url, /pull\/8$/);
+  assert.match(result.previewError, /Publish an upstream PR/);
+});

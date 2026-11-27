@@ -4,6 +4,10 @@ Kefania supplies the GitHub tools requested by Sweetiebot's New PR button. The M
 
 The drafting model writes the title and description from repository evidence. Kefania reads the published branch comparison, publishes the PR, publishes the final description without an automatic footer image, and records supplied conversation provenance in a separate comment. When the proposed PR diverged from its base, Kefania also checks GitHub's verified test-merge tree against newer base-branch changes and posts a **non-blocking review comment** for potential lost or resurrected code. If the merge result cannot be verified, it comments that the review is incomplete instead of claiming safety. Humans discuss intentional changes in the PR conversation; Kefania does not approve or reject them. The review is rerun when an existing PR is submitted through Kefania again, once per head/base revision. It never stages, commits, pushes, or merges repository changes.
 
+## Optional ChatGPT Sites previews for upstream PRs
+
+Kefania can prepare a ChatGPT Sites development preview for an upstream pull request from a fork. Provide the optional `previewZone` field when publishing, or call `github_prepare_preview_site` afterward. The verified commit becomes a Site-building handoff for `branch.repo.preview.example.com`. After the Site is really deployed and its custom-domain DNS instructions are available, the separately approved `github_publish_preview_dns` tool can add the exact CNAME/TXT records through Spaceship without overwriting conflicts. Sites does not document an external deployment API; the build and public-sharing stages happen in ChatGPT Sites, not automatically inside Kefania. See [Preview Sites instructions](docs/PREVIEW_SITES.md).
+
 ## Setup by client
 
 ### Open pull requests against upstream
