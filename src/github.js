@@ -191,22 +191,22 @@ export function createGithubRequest({ env = process.env, appRequest, userRequest
     if (!selected) {
       selected = (async () => {
         try {
-          const app = await getApp();
-          await app.status();
-          return { request: app, status: app.status, method: 'app' };
+          // User-to-server tokens attribute new PRs to the user through codex-pony.
+          await userRequest.status();
+          return { request: userRequest, status: userRequest.status, method: 'user' };
         } catch {
-          // Prefer bot attribution; select a working fallback before any write.
+          // Select an alternative identity before any write, not after a failed write.
         }
         try {
-          await userRequest.status();
-          return { request: userRequest, status: async () => ({ ...await userRequest.status(),
-            fallbackFrom: 'app', fallbackReason: 'No authorized GitHub App installation is available.' }), method: 'user' };
+          const app = await getApp();
+          await app.status();
+          return { request: app, status: async () => ({ ...await app.status(),
+            fallbackFrom: 'user', fallbackReason: 'No authorized GitHub App user connection is available.' }), method: 'app' };
         } catch {
-          // Select the fallback before any repository write. Never replay a
-          // failed write under a different identity: it may have succeeded.
+          // Never replay a failed write under another identity: it may have succeeded.
           await cliStatus();
           return { request: cliRequest, status: async () => ({ ...await cliStatus(),
-            fallbackFrom: 'app', fallbackReason: 'No authorized GitHub user or App installation is available.' }), method: 'cli' };
+            fallbackFrom: 'user', fallbackReason: 'No authorized GitHub user or App installation is available.' }), method: 'cli' };
         }
       })().catch(error => { selected = undefined; throw error; });
     }

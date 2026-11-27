@@ -69,15 +69,33 @@ test('user API refreshes an expiring device-flow session and never retries faile
   assert.equal(saved.refreshToken, 'rotated');
 });
 
-test('automatic auth prefers the bot even with a working user connection and resets cleanly', async () => {
+test('automatic auth prefers the user even with a working App bot and resets cleanly', async () => {
   const calls = [];
-  const app = async endpoint => { calls.push(endpoint); return { repositories: [{ full_name: 'example/project' }] }; };
-  app.status = async () => ({ githubAuth: 'app', githubLogin: 'codex-pony[bot]' });
-  const user = async () => assert.fail('Should not use user');
-  user.status = async () => assert.fail('Should not select user');
+  const user = async endpoint => { calls.push(endpoint); return { repositories: [{ full_name: 'alice/project' }] }; };
+  user.status = async () => ({ githubAuth: 'user', githubLogin: 'alice' });
+  user.repositories = async () => [{ full_name: 'alice/project' }];
+  const app = async () => assert.fail('Should not use bot');
+  app.status = async () => assert.fail('Should not select bot');
   const request = createGithubRequest({ env: {}, userRequest: user, appRequest: app,
     cliRequest: () => assert.fail('Should not use gh') });
+  assert.equal((await request.status()).githubAuth, 'user');
+  assert.equal((await request.repositories())[0].full_name, 'alice/project');
+  await request('repos/alice/project/pulls', { method: 'POST' });
+  assert.equal(calls.at(-1), 'repos/alice/project/pulls');
+  request.reset();
+  assert.equal((await request.status()).githubLogin, 'alice');
+});
+
+test('automatic auth falls back to the App bot when user authorization is unavailable', async () => {
+  const calls = [];
+  const user = async () => assert.fail('Unavailable user must not publish');
+  user.status = async () => { throw new Error('User connection missing'); };
+  const app = async endpoint => { calls.push(endpoint); return { repositories: [{ full_name: 'example/project' }] }; };
+  app.status = async () => ({ githubAuth: 'app', githubLogin: 'codex-pony[bot]' });
+  const request = createGithubRequest({ env: { KEFANIA_GITHUB_AUTH: 'auto' }, userRequest: user,
+    appRequest: app, cliRequest: () => assert.fail('Should not use gh') });
   assert.equal((await request.status()).githubAuth, 'app');
+  assert.equal((await request.status()).fallbackFrom, 'user');
   assert.equal((await request.repositories())[0].full_name, 'example/project');
   await request('repos/example/project/pulls', { method: 'POST' });
   assert.equal(calls.at(-1), 'repos/example/project/pulls');
@@ -85,22 +103,32 @@ test('automatic auth prefers the bot even with a working user connection and res
   assert.equal((await request.status()).githubLogin, 'codex-pony[bot]');
 });
 
-test('automatic auth falls back to user before CLI when the bot is unavailable', async () => {
-  const calls = [];
-  const user = async endpoint => { calls.push(endpoint); return { ok: true }; };
-  user.status = async () => ({ githubAuth: 'user', githubLogin: 'alice' });
-  user.repositories = async () => [{ full_name: 'alice/project' }];
+test('automatic auth falls back to gh only when both App identities are unavailable', async () => {
+  const user = async () => assert.fail('Unavailable user must not publish');
+  user.status = async () => { throw new Error('User connection missing'); };
   const app = async () => assert.fail('Unavailable bot must not publish');
   app.status = async () => { throw new Error('Missing app setup'); };
-  const request = createGithubRequest({ env: { KEFANIA_GITHUB_AUTH: 'auto' }, userRequest: user,
-    appRequest: app, cliRequest: () => assert.fail('Should not use gh') });
-  assert.equal((await request.status()).githubAuth, 'user');
-  assert.equal((await request.status()).fallbackFrom, 'app');
-  assert.equal((await request.repositories())[0].full_name, 'alice/project');
-  await request('repos/alice/project/pulls');
-  assert.equal(calls[0], 'repos/alice/project/pulls');
-  request.reset();
-  assert.equal((await request.status()).githubLogin, 'alice');
+  const calls = [];
+  const cli = async endpoint => { calls.push(endpoint); return endpoint === 'user'
+    ? { login: 'alice' } : { ok: true }; };
+  const request = createGithubRequest({ env: {}, userRequest: user, appRequest: app, cliRequest: cli });
+  assert.equal((await request.status()).githubAuth, 'cli');
+  assert.equal((await request.status()).fallbackFrom, 'user');
+  await request('repos/alice/project/pulls', { method: 'POST' });
+  assert.equal(calls.at(-1), 'repos/alice/project/pulls');
+});
+
+test('explicit App mode still publishes as the bot with a valid user connection', async () => {
+  const user = async () => assert.fail('Must not use user');
+  user.status = async () => ({ githubAuth: 'user', githubLogin: 'alice' });
+  const calls = [];
+  const app = async endpoint => { calls.push(endpoint); return { ok: true }; };
+  app.status = async () => ({ githubAuth: 'app', githubLogin: 'codex-pony[bot]' });
+  const request = createGithubRequest({ env: { KEFANIA_GITHUB_AUTH: 'app' }, userRequest: user,
+    appRequest: app, cliRequest: () => assert.fail('Must not use gh') });
+  assert.equal((await request.status()).githubAuth, 'app');
+  await request('repos/example/project/pulls', { method: 'POST' });
+  assert.equal(calls.at(-1), 'repos/example/project/pulls');
 });
 
 test('explicit user mode bypasses the bot and failed user writes never change identity', async () => {

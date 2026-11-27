@@ -20,7 +20,7 @@
         <div class="step-label">01 · Connect</div>
         <div class="step-content">
           <h2 id="connect-heading">Connect GitHub</h2>
-          <p class="subtle">Connect codex-pony[bot] once. Kefania chooses the right installation for each repository automatically.</p>
+          <p class="subtle">Connect your GitHub account to publish PRs as yourself through codex-pony. Bot authentication remains available as a fallback.</p>
           <div class="status-line"><span class="dot" id="connection-dot"></span><strong id="connection-state">Checking connection…</strong></div>
           <div class="actions">
             <button id="connect" type="button" class="primary">Connect GitHub</button>
@@ -34,15 +34,15 @@
             <p class="subtle" id="auth-progress" role="status" aria-live="polite">Finish authorization in the GitHub tab.</p>
           </div>
           <details class="developer">
-            <summary>Use your account with the App badge instead</summary>
-            <p class="subtle">This optional connection attributes PRs to your account. The public Client ID is filled in automatically. Enable Device Flow in the App settings, then authorize on GitHub. No private key or client secret is needed for this account connection.</p>
+            <summary>GitHub App account authorization details</summary>
+            <p class="subtle">This connection attributes PRs to your account. The public Client ID is filled in automatically; you can override it here. Enable Device Flow in the App settings, then authorize on GitHub. No private key or client secret is needed.</p>
             <label for="client-id">GitHub App Client ID</label>
             <input type="text" id="client-id" placeholder="Iv1… or Ov23li…" autocomplete="off" spellcheck="false">
             <div class="actions"><button id="connect-account" type="button" class="secondary">Connect your account</button></div>
           </details>
           <details id="bot-setup">
-            <summary>Set up codex-pony[bot]</summary>
-            <p class="subtle">Publish PRs as the bot. Select the App's downloaded private-key PEM file; Kefania saves it in macOS Keychain. Bot authentication takes priority over your connected account.</p>
+            <summary>Set up codex-pony[bot] (optional)</summary>
+            <p class="subtle">Publish PRs as the bot. Select the App's downloaded private-key PEM file; Kefania saves it in macOS Keychain. Automatic mode prefers your connected account. The bot is used when that connection is unavailable, or when explicitly selected with <code>KEFANIA_GITHUB_AUTH=app</code>.</p>
             <a class="text-link" href="https://github.com/settings/apps/codex-pony" target="_blank" rel="noopener noreferrer">Open codex-pony App settings ↗</a>
             <label for="bot-app-id">GitHub App ID</label>
             <input id="bot-app-id" type="text" inputmode="numeric" value="4871148" autocomplete="off" spellcheck="false">
@@ -66,7 +66,7 @@
             </ol>
             <div id="installation-links" class="actions"></div>
           </div>
-          <p class="subtle fallback">Bot setup attributes PRs to <code>codex-pony[bot]</code>. Connect GitHub attributes them to your account through the App. <code>gh auth login</code> remains a fallback.</p>
+          <p class="subtle fallback">Automatic mode opens PRs under your connected account through codex-pony, falling back to <code>codex-pony[bot]</code> and then <code>gh auth login</code>. Set <code>KEFANIA_GITHUB_AUTH=user</code> to require your account and prevent bot fallback.</p>
           <p id="connect-message" class="message" role="status" aria-live="polite"></p>
         </div>
       </section>
